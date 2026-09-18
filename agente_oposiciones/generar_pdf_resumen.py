@@ -53,24 +53,26 @@ def main():
     salida = Path(args.salida)
     salida.mkdir(parents=True, exist_ok=True)
 
-    grupos: dict[tuple[str, str], list[dict]] = defaultdict(list)
+    grupos: dict[tuple[str, str, str], list[dict]] = defaultdict(list)
     with manifiesto.open(encoding="utf-8") as f:
         for fila in csv.DictReader(f):
-            grupos[(fila["organismo"], fila["puesto"])].append(fila)
+            anio = fila.get("anio") or "sin_fecha"
+            grupos[(fila["organismo"], fila["puesto"], anio)].append(fila)
 
-    for (organismo, puesto), filas in grupos.items():
-        nombre_base = f"{organismo} - {puesto}".replace("/", "-")
+    for (organismo, puesto, anio), filas in grupos.items():
+        nombre_base = f"{organismo} - {anio} - {puesto}".replace("/", "-")
         portada_tmp = salida / f"_portada_{nombre_base}.pdf"
         lineas = [
             f"Organismo: {organismo}",
             f"Puesto: {puesto}",
+            f"Año de la convocatoria: {anio}",
             "",
             "Documentos incluidos y fuente oficial:",
         ]
         for fila in filas:
             lineas.append(f"- [{fila['tipo']}] {fila['texto_enlace']}")
             lineas.append(f"  Fuente: {fila['url_origen']}")
-        portada_pdf(portada_tmp, f"Oposición {puesto} - {organismo}", lineas)
+        portada_pdf(portada_tmp, f"Oposición {puesto} ({anio}) - {organismo}", lineas)
 
         writer = PdfWriter()
         writer.append(str(portada_tmp))

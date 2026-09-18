@@ -170,6 +170,14 @@ def nombre_archivo_seguro(texto: str, url: str) -> str:
     return (base or "documento")[:80] + ".pdf"
 
 
+def derivar_anio_de_url(url: str) -> str | None:
+    """Busca un año de convocatoria (20xx) en la URL, para poder agrupar
+    los documentos como "2024 - auxiliar_administrativo" en vez de mezclar
+    en la misma carpeta convocatorias de años distintos."""
+    coincidencias = re.findall(r"(20\d{2})", urlparse(url).path)
+    return coincidencias[-1] if coincidencias else None
+
+
 SEGMENTOS_URL_IGNORADOS = {
     "export", "sites", "concejalias", "relaciones-humanas", "galleries",
     "documentos-oposiciones", "servicios", "informacion", "wp-content",
@@ -198,7 +206,7 @@ def derivar_puesto_de_url(url: str) -> str:
     return re.sub(r"[^a-z0-9]+", "_", bruto).strip("_") or "sin_clasificar"
 
 
-MANIFIESTO_CAMPOS = ["organismo", "puesto", "tipo", "archivo_local", "url_origen", "texto_enlace"]
+MANIFIESTO_CAMPOS = ["organismo", "puesto", "anio", "tipo", "archivo_local", "url_origen", "texto_enlace"]
 
 
 def cargar_progreso(path: Path) -> dict:
@@ -323,10 +331,15 @@ def main():
                 if args.puesto and args.puesto.lower() not in puesto.lower():
                     continue
                 tipo = clasificar(texto + " " + url_pdf, PALABRAS_CLAVE_TIPO, "otros")
+                anio = derivar_anio_de_url(url_pdf)
 
-                nombre = nombre_archivo_seguro(texto, url_pdf)
+                # Carpeta "AÑO - puesto" (ej. "2024 - auxiliar_administrativo"):
+                # así cada convocatoria queda junta y ordenada cronológicamente,
+                # en vez de mezclar años distintos en la misma carpeta.
+                carpeta_convocatoria = f"{anio} - {puesto}" if anio else f"sin_fecha - {puesto}"
+                nombre = f"{tipo}__{nombre_archivo_seguro(texto, url_pdf)}"
                 organismo_dir = re.sub(r"[^a-z0-9]+", "_", _normalizar(organismo_pdf)).strip("_")
-                destino = salida / organismo_dir / puesto / tipo / nombre
+                destino = salida / organismo_dir / carpeta_convocatoria / nombre
 
                 if destino.exists():
                     print(f"  [ya existe] {destino}")
@@ -340,6 +353,7 @@ def main():
                 manifiesto_writer.writerow({
                     "organismo": organismo_pdf,
                     "puesto": puesto,
+                    "anio": anio or "sin_fecha",
                     "tipo": tipo,
                     "archivo_local": str(destino),
                     "url_origen": url_pdf,

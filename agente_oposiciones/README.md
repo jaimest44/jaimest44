@@ -13,6 +13,28 @@ Para cada oposición encontrada, intenta traer:
 - **Segundo ejercicio**: preguntas cortas / supuesto práctico, con la
   plantilla de corrección oficial si el organismo la ha publicado.
 
+Los documentos quedan organizados así, por ayuntamiento y por convocatoria
+(año + puesto), para que cada examen quede junto a su propia plantilla de
+respuestas y no se mezclen convocatorias de años distintos:
+
+```
+descargas/
+  ayuntamiento_de_sevilla/
+    2024 - administrativo/
+      primer_ejercicio_test__examen.pdf
+      plantilla_respuestas__plantilla.pdf
+    2022 - policia_local/
+      primer_ejercicio_test__examen.pdf
+  ayuntamiento_de_malaga/
+    2023 - auxiliar_administrativo/
+      ...
+  manifiesto.csv
+  progreso.json
+```
+
+Si un documento no incluye ningún año en su URL, va a una carpeta
+`sin_fecha - <puesto>`.
+
 ## Por qué no vienen ya PDFs descargados en este repositorio
 
 Esta sesión se ejecutó en un entorno con salida a internet restringida
