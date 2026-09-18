@@ -90,46 +90,49 @@ def enlaces_de_pagina(url_base: str, soup: BeautifulSoup) -> list[tuple[str, str
     return enlaces
 
 
-def recolectar_pdfs(fuente: dict) -> list[tuple[str, str, str]]:
-    """Devuelve lista de (url_pdf, texto_enlace, organismo) para una fuente semilla."""
+def recolectar_pdfs(
+    fuente: dict, profundidad: int = 2, max_paginas_por_nivel: int = 30,
+) -> list[tuple[str, str, str]]:
+    """Devuelve lista de (url_pdf, texto_enlace, organismo) para una fuente semilla.
+
+    Recorre la web del organismo en anchura, hasta `profundidad` niveles de
+    enlaces internos relacionados con oposiciones/empleo público, para traerse
+    TODAS las convocatorias que encuentre (no solo un puesto concreto). Las
+    webs de ayuntamiento suelen anidar cada convocatoria bajo su propia
+    carpeta/año, así que un solo nivel se queda corto.
+    """
     organismo = fuente["organismo"]
     url_semilla = fuente["url"]
     print(f"[buscando] {organismo} -> {url_semilla}")
 
-    soup = obtener_html(url_semilla)
-    if soup is None:
-        return []
-
+    mismo_dominio = urlparse(url_semilla).netloc
     encontrados: list[tuple[str, str, str]] = []
     visitadas = {url_semilla}
-    paginas_a_visitar = [url_semilla]
+    nivel_actual = [url_semilla]
 
-    enlaces = enlaces_de_pagina(url_semilla, soup)
-
-    # PDFs directamente en la página semilla
-    for href, texto in enlaces:
-        if href.lower().endswith(".pdf"):
-            encontrados.append((href, texto, organismo))
-
-    # Un nivel de profundidad: subpáginas relacionadas con oposiciones/empleo público
-    mismo_dominio = urlparse(url_semilla).netloc
-    subpaginas = [
-        href for href, texto in enlaces
-        if urlparse(href).netloc == mismo_dominio
-        and href not in visitadas
-        and not href.lower().endswith(".pdf")
-        and ENLACES_RELEVANTES.search(texto + " " + href)
-    ]
-
-    for sub in subpaginas[:15]:  # límite prudente por fuente
-        visitadas.add(sub)
-        time.sleep(PAUSA_ENTRE_PETICIONES)
-        sub_soup = obtener_html(sub)
-        if sub_soup is None:
-            continue
-        for href, texto in enlaces_de_pagina(sub, sub_soup):
-            if href.lower().endswith(".pdf"):
-                encontrados.append((href, texto, organismo))
+    for nivel in range(profundidad + 1):
+        siguiente_nivel: list[str] = []
+        for url_pagina in nivel_actual[:max_paginas_por_nivel]:
+            if url_pagina != url_semilla:
+                time.sleep(PAUSA_ENTRE_PETICIONES)
+            soup = obtener_html(url_pagina)
+            if soup is None:
+                continue
+            for href, texto in enlaces_de_pagina(url_pagina, soup):
+                if href.lower().endswith(".pdf"):
+                    encontrados.append((href, texto, organismo))
+                    continue
+                if (
+                    nivel < profundidad
+                    and urlparse(href).netloc == mismo_dominio
+                    and href not in visitadas
+                    and ENLACES_RELEVANTES.search(texto + " " + href)
+                ):
+                    visitadas.add(href)
+                    siguiente_nivel.append(href)
+        nivel_actual = siguiente_nivel
+        if not nivel_actual:
+            break
 
     return encontrados
 
@@ -153,11 +156,43 @@ def nombre_archivo_seguro(texto: str, url: str) -> str:
     return (base or "documento")[:80] + ".pdf"
 
 
+SEGMENTOS_URL_IGNORADOS = {
+    "export", "sites", "concejalias", "relaciones-humanas", "galleries",
+    "documentos-oposiciones", "servicios", "informacion", "wp-content",
+    "uploads", "images", "empleo-publico", "recursos-humanos",
+}
+
+
+def derivar_puesto_de_url(url: str) -> str:
+    """Si el nombre del puesto no coincide con ninguna palabra clave conocida,
+    se usa el nombre de la carpeta de la convocatoria en la URL (los
+    ayuntamientos casi siempre publican cada proceso selectivo en su propia
+    carpeta), para no amontonar oposiciones distintas en "sin_clasificar"."""
+    segmentos = [s for s in urlparse(url).path.split("/") if s]
+    if segmentos:
+        segmentos = segmentos[:-1]  # descarta el nombre del propio archivo
+    candidatos = [
+        s for s in segmentos
+        if _normalizar(s).replace("-", "").replace("_", "") not in
+        {s2.replace("-", "") for s2 in SEGMENTOS_URL_IGNORADOS}
+        and not re.fullmatch(r"20\d{2}", s)  # años sueltos, ej. "2024"
+        and not re.fullmatch(r"new_folder_\d+", s, re.IGNORECASE)
+    ]
+    if not candidatos:
+        return "sin_clasificar"
+    bruto = _normalizar(candidatos[-1])
+    return re.sub(r"[^a-z0-9]+", "_", bruto).strip("_") or "sin_clasificar"
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument(
-        "--puesto", choices=["administrativo", "auxiliar_administrativo", "todos"],
-        default="todos", help="Filtra por puesto (por defecto: todos)",
+        "--puesto", default=None,
+        help=(
+            "Si se indica, filtra por puesto (coincidencia parcial, ej. "
+            "'administrativo' o 'policia_local'). Por defecto: TODAS las "
+            "oposiciones que se encuentren en cada ayuntamiento."
+        ),
     )
     parser.add_argument(
         "--organismo", default=None,
@@ -165,6 +200,14 @@ def main():
     )
     parser.add_argument(
         "--salida", default="descargas", help="Carpeta donde guardar los PDF descargados",
+    )
+    parser.add_argument(
+        "--profundidad", type=int, default=2,
+        help="Niveles de enlaces internos a seguir desde la página semilla (por defecto: 2)",
+    )
+    parser.add_argument(
+        "--max-paginas-por-nivel", type=int, default=30,
+        help="Límite de páginas a visitar en cada nivel, por fuente (por defecto: 30)",
     )
     args = parser.parse_args()
 
@@ -181,10 +224,14 @@ def main():
     filas_manifiesto = []
 
     for fuente in fuentes:
-        pdfs = recolectar_pdfs(fuente)
+        pdfs = recolectar_pdfs(
+            fuente, profundidad=args.profundidad, max_paginas_por_nivel=args.max_paginas_por_nivel,
+        )
         for url_pdf, texto, organismo in pdfs:
             puesto = clasificar(texto + " " + url_pdf, PALABRAS_CLAVE_PUESTO, "sin_clasificar")
-            if args.puesto != "todos" and puesto != args.puesto:
+            if puesto == "sin_clasificar":
+                puesto = derivar_puesto_de_url(url_pdf)
+            if args.puesto and args.puesto.lower() not in puesto.lower():
                 continue
             tipo = clasificar(texto + " " + url_pdf, PALABRAS_CLAVE_TIPO, "otros")
 

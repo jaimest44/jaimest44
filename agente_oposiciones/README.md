@@ -1,8 +1,13 @@
-# Agente de exámenes de oposición (Administrativo / Auxiliar Administrativo — Ayuntamientos de Andalucía)
+# Agente de exámenes de oposición (Ayuntamientos de Andalucía)
 
 Herramienta para localizar y descargar, **solo de fuentes oficiales**
 (ayuntamientos, diputaciones y Junta de Andalucía), exámenes reales de
-oposición a Administrativo/a y Auxiliar Administrativo/a:
+oposición. Por defecto se trae **todas las oposiciones que encuentre en
+cada ayuntamiento** (Administrativo, Auxiliar Administrativo, Policía
+Local, Técnico, etc.), cada una en su propia carpeta; si solo te interesa
+un puesto concreto, se puede filtrar con `--puesto`.
+
+Para cada oposición encontrada, intenta traer:
 
 - **Primer ejercicio**: examen tipo test, con su plantilla de respuestas.
 - **Segundo ejercicio**: preguntas cortas / supuesto práctico, con la
@@ -23,16 +28,25 @@ cd agente_oposiciones
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 
-# Buscar y descargar todo lo disponible para Auxiliar Administrativo
-python buscar_examenes.py --puesto auxiliar_administrativo
+# Buscar y descargar TODAS las oposiciones de TODOS los ayuntamientos de
+# fuentes.py (tarda más, precisamente porque no se limita a un puesto)
+python buscar_examenes.py
 
-# Solo de un ayuntamiento concreto
-python buscar_examenes.py --puesto administrativo --organismo "Dos Hermanas"
+# Solo de un ayuntamiento concreto, pero con todos sus puestos
+python buscar_examenes.py --organismo "Dos Hermanas"
+
+# Si además quieres quedarte solo con un puesto en concreto
+python buscar_examenes.py --organismo "Dos Hermanas" --puesto auxiliar_administrativo
 
 # Unir lo descargado en un cuadernillo PDF por organismo/puesto, con
 # portada que cita la fuente oficial de cada examen
 python generar_pdf_resumen.py
 ```
+
+Al no limitarse a un puesto, el rastreo visita más páginas por ayuntamiento
+(controlable con `--profundidad` y `--max-paginas-por-nivel`), así que
+tardará más y generará más carpetas en `descargas/` — una por cada
+oposición distinta que encuentre.
 
 Los archivos quedan en `descargas/<organismo>/<puesto>/<tipo>/*.pdf` y el
 cuadernillo combinado en `cuadernillos/`. `descargas/manifiesto.csv` guarda

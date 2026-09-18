@@ -3,8 +3,10 @@ Fuentes oficiales semilla para el agente de búsqueda de exámenes de oposición
 
 Cada entrada es una página oficial (ayuntamiento, diputación o portal de empleo
 público) donde se publican convocatorias, exámenes y plantillas de respuestas.
-El agente parte de estas páginas y sigue, como máximo un nivel, los enlaces
-internos cuyo texto contenga palabras clave de oposiciones/empleo público.
+El agente parte de estas páginas y sigue, hasta dos niveles, los enlaces
+internos cuyo texto contenga palabras clave de oposiciones/empleo público, para
+traerse TODAS las oposiciones que encuentre en cada ayuntamiento (no solo
+Administrativo/Auxiliar Administrativo).
 
 Amplía esta lista con más ayuntamientos andaluces según los vayas necesitando:
 la mayoría de ayuntamientos publican sus procesos selectivos bajo una sección
@@ -64,9 +66,23 @@ FUENTES_ANDALUCIA = [
     },
 ]
 
+# El orden importa: se usa la primera etiqueta que coincida. Se listan primero
+# las que más suelen interesar (Administrativo) y luego el resto de cuerpos y
+# categorías habituales en plantillas de ayuntamiento, para que cada oposición
+# quede en su propia carpeta en vez de amontonarse en "sin_clasificar".
 PALABRAS_CLAVE_PUESTO = {
     "administrativo": ["administrativo", "c1.1000", "cuerpo general de administrativos"],
     "auxiliar_administrativo": ["auxiliar administrativo", "aux. admtvo", "aux admtvo", "c2.1000"],
+    "policia_local": ["policia local", "policía local"],
+    "bombero": ["bombero", "bombera"],
+    "tecnico": ["tecnico de administracion", "técnico de administración", "tecnico superior", "técnico superior", "tecnico medio", "técnico medio", "tag "],
+    "arquitecto_ingeniero": ["arquitecto", "ingeniero", "ingeniera"],
+    "trabajador_social": ["trabajador social", "trabajadora social", "educador social", "educadora social"],
+    "letrado_juridico": ["letrado", "letrada", "jurista", "asesoria juridica", "asesoría jurídica"],
+    "auxiliar_biblioteca_cultura": ["biblioteca", "cultura", "monitor deportivo", "monitora deportiva"],
+    "conserje_ordenanza_notificador": ["conserje", "ordenanza", "notificador", "notificadora"],
+    "oficial_operario": ["oficial", "operario", "peon", "peón", "electricista", "fontanero", "jardinero", "jardinera"],
+    "administracion_general": ["administracion general", "administración general", "subgrupo", "escala"],
 }
 
 PALABRAS_CLAVE_TIPO = {
