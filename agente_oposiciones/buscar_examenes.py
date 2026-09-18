@@ -15,6 +15,15 @@ Qué hace:
   5. Escribe un manifiesto `descargas/manifiesto.csv` con el origen de cada
      archivo (para poder citar la fuente oficial de cada examen).
 
+REANUDAR TRAS UNA PAUSA:
+  El script lleva un registro en `descargas/progreso.json` de qué
+  ayuntamientos ha terminado de rastrear por completo. Si lo paras
+  (Ctrl+C) y vuelves a lanzar EXACTAMENTE el mismo comando, se salta
+  automáticamente los ayuntamientos ya completados y sigue por donde
+  se quedó, sin repetir trabajo. Usa --forzar para repetir igualmente
+  un ayuntamiento ya completado, o --reset-progreso para olvidar todo
+  el progreso y empezar de cero.
+
 IMPORTANTE:
   - Solo descarga de las webs oficiales listadas en fuentes.py (ayuntamientos,
     diputaciones, Junta de Andalucía). No usa academias privadas ni agregadores
@@ -34,10 +43,12 @@ from __future__ import annotations
 
 import argparse
 import csv
+import json
 import re
 import sys
 import time
 import unicodedata
+from datetime import datetime
 from pathlib import Path
 from urllib.parse import urljoin, urlparse
 
@@ -184,6 +195,34 @@ def derivar_puesto_de_url(url: str) -> str:
     return re.sub(r"[^a-z0-9]+", "_", bruto).strip("_") or "sin_clasificar"
 
 
+MANIFIESTO_CAMPOS = ["organismo", "puesto", "tipo", "archivo_local", "url_origen", "texto_enlace"]
+
+
+def cargar_progreso(path: Path) -> dict:
+    if path.exists():
+        try:
+            return json.loads(path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            print(f"[aviso] {path} estaba corrupto, se ignora y se empieza de cero", file=sys.stderr)
+    return {"completados": {}}
+
+
+def guardar_progreso(path: Path, progreso: dict) -> None:
+    path.write_text(json.dumps(progreso, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def abrir_manifiesto(path: Path):
+    """Abre el manifiesto en modo añadir: conserva lo escrito en ejecuciones
+    anteriores en vez de sobrescribirlo, para que el historial de todos los
+    ayuntamientos rastreados quede acumulado en un único CSV."""
+    es_nuevo = not path.exists()
+    f = path.open("a", newline="", encoding="utf-8")
+    writer = csv.DictWriter(f, fieldnames=MANIFIESTO_CAMPOS)
+    if es_nuevo:
+        writer.writeheader()
+    return f, writer
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument(
@@ -209,6 +248,14 @@ def main():
         "--max-paginas-por-nivel", type=int, default=30,
         help="Límite de páginas a visitar en cada nivel, por fuente (por defecto: 30)",
     )
+    parser.add_argument(
+        "--forzar", action="store_true",
+        help="Vuelve a rastrear ayuntamientos que el progreso guardado ya marca como completados",
+    )
+    parser.add_argument(
+        "--reset-progreso", action="store_true",
+        help="Borra el progreso guardado (descargas/progreso.json) y empieza de cero",
+    )
     args = parser.parse_args()
 
     fuentes = FUENTES_ANDALUCIA
@@ -221,50 +268,80 @@ def main():
     salida = Path(args.salida)
     salida.mkdir(parents=True, exist_ok=True)
     manifiesto_path = salida / "manifiesto.csv"
-    filas_manifiesto = []
+    progreso_path = salida / "progreso.json"
 
-    for fuente in fuentes:
-        pdfs = recolectar_pdfs(
-            fuente, profundidad=args.profundidad, max_paginas_por_nivel=args.max_paginas_por_nivel,
-        )
-        for url_pdf, texto, organismo in pdfs:
-            puesto = clasificar(texto + " " + url_pdf, PALABRAS_CLAVE_PUESTO, "sin_clasificar")
-            if puesto == "sin_clasificar":
-                puesto = derivar_puesto_de_url(url_pdf)
-            if args.puesto and args.puesto.lower() not in puesto.lower():
-                continue
-            tipo = clasificar(texto + " " + url_pdf, PALABRAS_CLAVE_TIPO, "otros")
+    progreso = {"completados": {}} if args.reset_progreso else cargar_progreso(progreso_path)
+    completados = progreso.setdefault("completados", {})
 
-            nombre = nombre_archivo_seguro(texto, url_pdf)
-            organismo_dir = re.sub(r"[^a-z0-9]+", "_", _normalizar(organismo)).strip("_")
-            destino = salida / organismo_dir / puesto / tipo / nombre
+    pendientes = [f for f in fuentes if args.forzar or f["organismo"] not in completados]
+    ya_hechos = [f for f in fuentes if f not in pendientes]
+    for f in ya_hechos:
+        info = completados[f["organismo"]]
+        print(f"[saltado, ya completado el {info['fecha']}] {f['organismo']} ({info['documentos']} documentos)")
 
-            if destino.exists():
-                print(f"  [ya existe] {destino}")
-            else:
-                time.sleep(PAUSA_ENTRE_PETICIONES)
-                ok = descargar_pdf(url_pdf, destino)
-                print(f"  [{'ok' if ok else 'fallo'}] {url_pdf} -> {destino}")
-                if not ok:
+    manifiesto_f, manifiesto_writer = abrir_manifiesto(manifiesto_path)
+    total_documentos_nuevos = 0
+
+    try:
+        for fuente in pendientes:
+            organismo = fuente["organismo"]
+            pdfs = recolectar_pdfs(
+                fuente, profundidad=args.profundidad, max_paginas_por_nivel=args.max_paginas_por_nivel,
+            )
+            documentos_organismo = 0
+            for url_pdf, texto, organismo_pdf in pdfs:
+                puesto = clasificar(texto + " " + url_pdf, PALABRAS_CLAVE_PUESTO, "sin_clasificar")
+                if puesto == "sin_clasificar":
+                    puesto = derivar_puesto_de_url(url_pdf)
+                if args.puesto and args.puesto.lower() not in puesto.lower():
                     continue
+                tipo = clasificar(texto + " " + url_pdf, PALABRAS_CLAVE_TIPO, "otros")
 
-            filas_manifiesto.append({
-                "organismo": organismo,
-                "puesto": puesto,
-                "tipo": tipo,
-                "archivo_local": str(destino),
-                "url_origen": url_pdf,
-                "texto_enlace": texto,
-            })
+                nombre = nombre_archivo_seguro(texto, url_pdf)
+                organismo_dir = re.sub(r"[^a-z0-9]+", "_", _normalizar(organismo_pdf)).strip("_")
+                destino = salida / organismo_dir / puesto / tipo / nombre
 
-    if filas_manifiesto:
-        with manifiesto_path.open("w", newline="", encoding="utf-8") as f:
-            writer = csv.DictWriter(f, fieldnames=list(filas_manifiesto[0].keys()))
-            writer.writeheader()
-            writer.writerows(filas_manifiesto)
-        print(f"\nManifiesto guardado en {manifiesto_path} ({len(filas_manifiesto)} documentos)")
-    else:
-        print("\nNo se ha descargado ningún documento con los filtros indicados.")
+                if destino.exists():
+                    print(f"  [ya existe] {destino}")
+                else:
+                    time.sleep(PAUSA_ENTRE_PETICIONES)
+                    ok = descargar_pdf(url_pdf, destino)
+                    print(f"  [{'ok' if ok else 'fallo'}] {url_pdf} -> {destino}")
+                    if not ok:
+                        continue
+
+                manifiesto_writer.writerow({
+                    "organismo": organismo_pdf,
+                    "puesto": puesto,
+                    "tipo": tipo,
+                    "archivo_local": str(destino),
+                    "url_origen": url_pdf,
+                    "texto_enlace": texto,
+                })
+                manifiesto_f.flush()
+                documentos_organismo += 1
+                total_documentos_nuevos += 1
+
+            # Solo se marca como completado si se ha terminado de rastrear
+            # ENTERO ese ayuntamiento; si se interrumpe a mitad, se reintenta
+            # entero la próxima vez (los PDF ya bajados no se repiten).
+            completados[organismo] = {
+                "fecha": datetime.now().isoformat(timespec="seconds"),
+                "documentos": documentos_organismo,
+            }
+            guardar_progreso(progreso_path, progreso)
+    except KeyboardInterrupt:
+        print(
+            "\n[detenido] Progreso guardado. Vuelve a ejecutar el mismo comando "
+            "para continuar por donde lo dejaste (los ayuntamientos ya "
+            "completados no se repiten)."
+        )
+    finally:
+        manifiesto_f.close()
+
+    print(f"\n{total_documentos_nuevos} documentos nuevos en esta ejecución.")
+    print(f"Manifiesto acumulado: {manifiesto_path}")
+    print(f"Progreso guardado en: {progreso_path}")
 
 
 if __name__ == "__main__":

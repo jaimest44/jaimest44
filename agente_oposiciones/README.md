@@ -48,6 +48,38 @@ Al no limitarse a un puesto, el rastreo visita más páginas por ayuntamiento
 tardará más y generará más carpetas en `descargas/` — una por cada
 oposición distinta que encuentre.
 
+## Pausar y reanudar sin repetir trabajo
+
+El script lleva un registro en `descargas/progreso.json` de qué
+ayuntamientos ha terminado de rastrear **por completo**. Si lo paras
+(`Ctrl+C`) y vuelves a lanzar exactamente el mismo comando, se salta
+automáticamente los ayuntamientos ya completados y continúa por donde lo
+dejaste:
+
+```bash
+python buscar_examenes.py
+# ... Ctrl+C en cualquier momento ...
+python buscar_examenes.py   # mismo comando: retoma donde lo dejó
+```
+
+Notas sobre cómo funciona:
+
+- Un ayuntamiento solo se marca como "completado" cuando se ha terminado
+  de rastrear entero. Si lo paras a mitad de un ayuntamiento, esa
+  ejecución siguiente lo vuelve a rastrear entero (pero sin volver a
+  **descargar** los PDF que ya tuviera guardados en disco, eso ya lo
+  comprueba archivo a archivo).
+- `descargas/manifiesto.csv` se va escribiendo línea a línea según se
+  descarga cada PDF (no al final), así que aunque lo interrumpas nunca se
+  pierde lo ya conseguido.
+- `--forzar` vuelve a rastrear ayuntamientos que ya estaban marcados como
+  completados (útil si quieres comprobar si ha salido una convocatoria
+  nueva).
+- `--reset-progreso` borra `progreso.json` y empieza de cero para todos.
+- El progreso se guarda por el **nombre del organismo** tal como aparece
+  en `fuentes.py`; si cambias ese nombre, el script lo tratará como uno
+  nuevo.
+
 Los archivos quedan en `descargas/<organismo>/<puesto>/<tipo>/*.pdf` y el
 cuadernillo combinado en `cuadernillos/`. `descargas/manifiesto.csv` guarda
 la URL oficial de origen de cada PDF, para poder verificarlo siempre.
