@@ -95,7 +95,10 @@ def obtener_html(url: str) -> BeautifulSoup | None:
 def enlaces_de_pagina(url_base: str, soup: BeautifulSoup) -> list[tuple[str, str]]:
     enlaces = []
     for a in soup.find_all("a", href=True):
-        href = urljoin(url_base, a["href"])
+        # Algunas webs municipales meten espacios/saltos de línea sueltos
+        # dentro del href (ej. "empleo-publico.html "), que si no se limpian
+        # se codifican como %20 y rompen la URL con un 404.
+        href = urljoin(url_base, a["href"].strip())
         texto = a.get_text(" ", strip=True) or href
         enlaces.append((href, texto))
     return enlaces
