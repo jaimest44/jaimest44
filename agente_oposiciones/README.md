@@ -48,6 +48,29 @@ Al no limitarse a un puesto, el rastreo visita más páginas por ayuntamiento
 tardará más y generará más carpetas en `descargas/` — una por cada
 oposición distinta que encuentre.
 
+## Orden de rastreo: capitales y ciudades grandes primero
+
+`fuentes.py` guarda la población aproximada de cada ayuntamiento, y el
+script rastrea siempre de mayor a menor población: primero las
+diputaciones/Junta de Andalucía (agregan convocatorias de muchos
+ayuntamientos a la vez), luego las capitales de provincia y grandes
+ciudades, y al final los municipios pequeños — que es donde es más
+probable perder el tiempo entrando en una sede electrónica que ni
+siquiera tiene procesos selectivos.
+
+Si quieres saltarte directamente los pueblos pequeños en vez de esperar a
+que les toque el turno:
+
+```bash
+# Ignora cualquier ayuntamiento con menos de 50.000 habitantes
+python buscar_examenes.py --poblacion-minima 50000
+```
+
+Para añadir más ayuntamientos a `fuentes.py`, incluye también su
+`"poblacion"` (habitantes, aproximado) para que se ordenen bien; los
+organismos que no son un único municipio (diputaciones, Junta de
+Andalucía) llevan `"poblacion": None` y siempre van primero.
+
 ## Pausar y reanudar sin repetir trabajo
 
 El script lleva un registro en `descargas/progreso.json` de qué

@@ -256,6 +256,15 @@ def main():
         "--reset-progreso", action="store_true",
         help="Borra el progreso guardado (descargas/progreso.json) y empieza de cero",
     )
+    parser.add_argument(
+        "--poblacion-minima", type=int, default=0,
+        help=(
+            "Ignora ayuntamientos con menos habitantes que este número (ej. "
+            "10000 para saltarte pueblos pequeños). Los organismos que no son "
+            "un único municipio (diputaciones, Junta de Andalucía) nunca se "
+            "filtran por este criterio. Por defecto: 0 (no filtra a nadie)."
+        ),
+    )
     args = parser.parse_args()
 
     fuentes = FUENTES_ANDALUCIA
@@ -264,6 +273,21 @@ def main():
         if not fuentes:
             print(f"No hay ninguna fuente que coincida con '{args.organismo}' en fuentes.py")
             return
+
+    # Capitales/grandes ciudades primero: casi seguro tienen oposiciones
+    # publicadas. Los pueblos pequeños, si es que las tienen, van al final.
+    # Los organismos que no son un único municipio (poblacion=None: diputaciones,
+    # Junta de Andalucía) van siempre primero, porque agregan convocatorias de
+    # muchos ayuntamientos a la vez.
+    fuentes = sorted(
+        fuentes,
+        key=lambda f: (0, 0) if f.get("poblacion") is None else (1, -f["poblacion"]),
+    )
+    if args.poblacion_minima:
+        fuentes = [
+            f for f in fuentes
+            if f.get("poblacion") is None or f["poblacion"] >= args.poblacion_minima
+        ]
 
     salida = Path(args.salida)
     salida.mkdir(parents=True, exist_ok=True)
